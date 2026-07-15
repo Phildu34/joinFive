@@ -73,15 +73,19 @@ public:
 private:
     std::mt19937 rng{std::random_device{}()};
 
-    // Simule une partie complète desde un état, avec une politique donnée
-    // Signature simplifié : on va directement avec legalMoves
-    PlayoutResult playout(const std::vector<Move>& legalMoves, const Policy& policy);
+    // Simule une partie complète avec un coup racine forcé.
+    PlayoutResult playout(const std::vector<Move>& legalMoves,
+                         const Policy& policy,
+                         const Move& rootMove);
 
     // Sélectionne une action selon la politique softmax
     Move selectAction(const std::vector<Move>& legalMoves, const Policy& policy);
 
-    // Adapte la politique après une bonne séquence
-    Policy adapt(const Policy& policy, const std::vector<Move>& sequence);
+    // Adapte la politique après une bonne séquence en tenant compte
+    // de tous les coups légaux encore disponibles à chaque ply.
+    Policy adapt(const Policy& policy,
+                 const std::vector<Move>& sequence,
+                 const std::vector<Move>& allLegalMoves);
 };
 
 } // namespace JoinFive
