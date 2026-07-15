@@ -114,14 +114,22 @@ private struct GridState: Sendable, Codable {
     mutating func undoLastLine() {
         guard let last = lines.popLast() else { return }
 
+        // Seul le point nouvellement créé par ce coup doit être retiré : les 4
+        // autres points de la ligne existaient déjà avant.
         points.remove(last.newPoint)
-        for point in last.points {
-            guard var currentLocks = locks[point] else { continue }
-            currentLocks.remove(last.direction)
-            if currentLocks.isEmpty {
-                locks.removeValue(forKey: point)
-            } else {
-                locks[point] = currentLocks
+
+        // Les verrous ne peuvent pas être retirés ligne par ligne : en mode 5T,
+        // un même point/direction peut être verrouillé par plusieurs lignes qui
+        // se touchent. Un `Set<Direction>` ne compte pas ces occurrences, donc on
+        // reconstruit l'état des verrous à partir des lignes encore présentes.
+        rebuildLocks()
+    }
+
+    private mutating func rebuildLocks() {
+        locks.removeAll(keepingCapacity: true)
+        for line in lines {
+            for point in line.points {
+                locks[point, default: []].insert(line.direction)
             }
         }
     }
