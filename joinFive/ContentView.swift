@@ -414,6 +414,9 @@ private struct NRPAAlgorithm: JoinFiveAlgorithm {
     let name = "NRPA"
     let maxDurationMs: Int
     let maxSteps: Int
+    let level: Int
+    let iterationsPerLevel: Int
+    let alpha: Double
 
     func nextMove(on grid: GridState) -> MoveLine? {
         let legalMoves = grid.possibleLinesAroundExistingPoints()
@@ -444,7 +447,10 @@ private struct NRPAAlgorithm: JoinFiveAlgorithm {
         guard let result = NRPABridge.nextMove(withLegalMoves: payload,
                                                occupiedPoints: occupiedPayload,
                                                maxDuration: maxDurationMs,
-                                               maxSteps: maxSteps) else {
+                                               maxSteps: maxSteps,
+                                               level: level,
+                                               iterationsPerLevel: iterationsPerLevel,
+                                               alpha: alpha) else {
             return legalMoves.randomElement()
         }
 
@@ -505,6 +511,9 @@ private final class JoinFiveViewModel: ObservableObject {
     @Published var showHistory = false
     @Published var nrpaMaxSteps: Int = 200
     @Published var nrpaMaxDurationMs: Int = 2000
+    @Published var nrpaLevel: Int = 2
+    @Published var nrpaIterationsPerLevel: Int = 8
+    @Published var nrpaAlpha: Double = 0.5
 
     private var timerTask: Task<Void, Never>?
     private var simulationTask: Task<Void, Never>?
@@ -578,15 +587,25 @@ private final class JoinFiveViewModel: ObservableObject {
             guard let self else { return }
             while !Task.isCancelled {
                 // Lecture de l'état sur le MainActor
-                let (snapshot, computerType, isRunning, nrpaMaxSteps, nrpaMaxDurationMs) = await MainActor.run {
-                    (self.grid, self.computer, self.isComputerRunning, self.nrpaMaxSteps, self.nrpaMaxDurationMs)
+                let (snapshot, computerType, isRunning, nrpaMaxSteps, nrpaMaxDurationMs, nrpaLevel, nrpaIterationsPerLevel, nrpaAlpha) = await MainActor.run {
+                    (self.grid,
+                     self.computer,
+                     self.isComputerRunning,
+                     self.nrpaMaxSteps,
+                     self.nrpaMaxDurationMs,
+                     self.nrpaLevel,
+                     self.nrpaIterationsPerLevel,
+                     self.nrpaAlpha)
                 }
                 guard isRunning else { break }
 
                 // Calcul du prochain coup sur le thread courant (background)
                 let algo = JoinFiveViewModel.buildAlgorithm(for: computerType,
                                                             nrpaMaxSteps: nrpaMaxSteps,
-                                                            nrpaMaxDurationMs: nrpaMaxDurationMs)
+                                                            nrpaMaxDurationMs: nrpaMaxDurationMs,
+                                                            nrpaLevel: nrpaLevel,
+                                                            nrpaIterationsPerLevel: nrpaIterationsPerLevel,
+                                                            nrpaAlpha: nrpaAlpha)
                 let next = algo.nextMove(on: snapshot)
 
                 // Mise à jour de l'état sur le MainActor
@@ -658,13 +677,19 @@ private final class JoinFiveViewModel: ObservableObject {
 
     nonisolated static func buildAlgorithm(for computer: ComputerType,
                                            nrpaMaxSteps: Int = 200,
-                                           nrpaMaxDurationMs: Int = 2000) -> any JoinFiveAlgorithm {
+                                           nrpaMaxDurationMs: Int = 2000,
+                                           nrpaLevel: Int = 2,
+                                           nrpaIterationsPerLevel: Int = 8,
+                                           nrpaAlpha: Double = 0.5) -> any JoinFiveAlgorithm {
         switch computer {
         case .random: return RandomSearchAlgorithm()
         case .nmcs:   return NMCSAlgorithm()
         case .nrpa:
             return NRPAAlgorithm(maxDurationMs: max(1, nrpaMaxDurationMs),
-                                 maxSteps: max(1, nrpaMaxSteps))
+                                 maxSteps: max(1, nrpaMaxSteps),
+                                 level: max(0, nrpaLevel),
+                                 iterationsPerLevel: max(1, nrpaIterationsPerLevel),
+                                 alpha: max(0.01, nrpaAlpha))
         }
     }
 }
@@ -827,8 +852,10 @@ struct ContentView: View {
                 }
                 .frame(width: 170)
                 .disabled(viewModel.player == .human)
-
-                if viewModel.player == .computer {
+            }
+            Spacer()
+            HStack(spacing: 12) {
+                if viewModel.player == .computer && viewModel.computer == .nrpa {
                     HStack(spacing: 6) {
                         Text("NRPA maxSteps")
                             .font(.caption)
@@ -843,6 +870,30 @@ struct ContentView: View {
                         TextField("2000", value: $viewModel.nrpaMaxDurationMs, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 90)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("NRPA level")
+                            .font(.caption)
+                        TextField("2", value: $viewModel.nrpaLevel, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 60)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("NRPA iterations")
+                            .font(.caption)
+                        TextField("8", value: $viewModel.nrpaIterationsPerLevel, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("NRPA alpha")
+                            .font(.caption)
+                        TextField("0.5", value: $viewModel.nrpaAlpha, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 70)
                     }
                 }
             }

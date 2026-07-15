@@ -18,6 +18,14 @@ struct Move {
     int direction; // 0=H, 1=V, 2=Fall, 3=Rise
     int moveNumber;
 
+    Move()
+        : startX(0), startY(0), endX(0), endY(0),
+          newX(0), newY(0), direction(0), moveNumber(0) {}
+
+    Move(int sX, int sY, int eX, int eY, int nX, int nY, int dir, int num)
+        : startX(sX), startY(sY), endX(eX), endY(eY),
+          newX(nX), newY(nY), direction(dir), moveNumber(num) {}
+
     std::string id() const {
         return std::to_string(startX) + "," + std::to_string(startY) + "-" +
                std::to_string(endX) + "," + std::to_string(endY) + "-" +
@@ -78,17 +86,34 @@ public:
     Move nextMove(const std::vector<Move>& legalMoves,
                   const std::vector<OccupiedPoint>& occupiedPoints,
                   int maxDuration = 2000,
-                  int maxSteps = 200);
+                  int maxSteps = 200,
+                  int level = 2,
+                  int iterationsPerLevel = 8,
+                  double alpha = 0.5);
 
 private:
+    struct SearchContext {
+        const std::vector<Move>& legalMoves;
+        const std::vector<OccupiedPoint>& occupiedPoints;
+        int maxSteps;
+        int iterationsPerLevel;
+        double alpha;
+        std::chrono::steady_clock::time_point deadline;
+    };
+
     std::mt19937 rng{std::random_device{}()};
 
-    // Simule une partie complète avec un coup racine forcé.
+    // Simule une partie complète (niveau 0 de NRPA).
     PlayoutResult playout(const std::vector<Move>& legalMoves,
                          const std::vector<OccupiedPoint>& occupiedPoints,
                          const Policy& policy,
-                         const Move& rootMove,
-                         int maxSteps);
+                         int maxSteps,
+                         std::chrono::steady_clock::time_point deadline);
+
+    // NRPA récursif multi-niveaux.
+    PlayoutResult nrpa(int level,
+                       const Policy& policy,
+                       const SearchContext& context);
 
     // Sélectionne une action selon la politique softmax
     Move selectAction(const std::vector<Move>& legalMoves, const Policy& policy);
@@ -98,7 +123,8 @@ private:
     Policy adapt(const Policy& policy,
                  const std::vector<Move>& sequence,
                  const std::vector<Move>& allLegalMoves,
-                 const std::vector<OccupiedPoint>& occupiedPoints);
+                 const std::vector<OccupiedPoint>& occupiedPoints,
+                 double alpha);
 };
 
 } // namespace JoinFive

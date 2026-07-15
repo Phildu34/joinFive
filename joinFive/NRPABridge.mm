@@ -8,7 +8,10 @@ using namespace JoinFive;
 + (NSDictionary *)nextMoveWithLegalMoves:(NSArray *)legalMovesArray
                          occupiedPoints:(NSArray *)occupiedPointsArray
                               maxDuration:(NSInteger)ms
-                                 maxSteps:(NSInteger)maxSteps {
+                                 maxSteps:(NSInteger)maxSteps
+                                    level:(NSInteger)level
+                      iterationsPerLevel:(NSInteger)iterationsPerLevel
+                                    alpha:(double)alpha {
     
     // Convertir NSArray en vecteur C++ de Move
     std::vector<Move> moves;
@@ -40,12 +43,30 @@ using namespace JoinFive;
     
     // Appeler l'algorithme C++
     NRPAAlgorithm algo;
-    Move result = algo.nextMove(moves, occupiedPoints, (int)ms, (int)maxSteps);
+    Move result = algo.nextMove(moves,
+                                occupiedPoints,
+                                (int)ms,
+                                (int)maxSteps,
+                                (int)level,
+                                (int)iterationsPerLevel,
+                                alpha);
     
-    // Vérifier que le résultat n'est pas un Move vide
-    if (result.newX == 0 && result.newY == 0 && moves.size() > 0 &&
-        !(moves[0].newX == 0 && moves[0].newY == 0)) {
-        // Retourner le premier coup par défaut
+    bool foundInLegalMoves = false;
+    for (const Move &candidate : moves) {
+        if (candidate.startX == result.startX &&
+            candidate.startY == result.startY &&
+            candidate.endX == result.endX &&
+            candidate.endY == result.endY &&
+            candidate.newX == result.newX &&
+            candidate.newY == result.newY &&
+            candidate.direction == result.direction) {
+            foundInLegalMoves = true;
+            break;
+        }
+    }
+
+    // Fallback défensif: si le moteur renvoie un coup non légal, reprendre le premier légal.
+    if (!foundInLegalMoves && !moves.empty()) {
         const Move& first = moves[0];
         return @{
             @"startX": @(first.startX),

@@ -14,7 +14,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable NSDictionary *)nextMoveWithLegalMoves:(NSArray<NSDictionary *> *)legalMovesArray
                                  occupiedPoints:(NSArray<NSDictionary *> *)occupiedPointsArray
                                        maxDuration:(NSInteger)ms
-                                          maxSteps:(NSInteger)maxSteps;
+                                           maxSteps:(NSInteger)maxSteps
+                                              level:(NSInteger)level
+                                iterationsPerLevel:(NSInteger)iterationsPerLevel
+                                              alpha:(double)alpha;
 
 @end
 

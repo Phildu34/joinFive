@@ -25,7 +25,10 @@ struct SimpleGrid {
 Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves,
                              const std::vector<OccupiedPoint>& occupiedPoints,
                              int maxDuration,
-                             int maxSteps) {
+                             int maxSteps,
+                             int level,
+                             int iterationsPerLevel,
+                             double alpha) {
     if (legalMoves.empty()) {
         return Move();
     }
@@ -36,49 +39,34 @@ Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves,
     if (maxSteps < 1) {
         maxSteps = 1;
     }
-
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(maxDuration);
-    Policy policy;
-
-    int bestGlobalScore = -1;
-    Move bestGlobalMove = legalMoves.front();
-
-    while (std::chrono::steady_clock::now() < deadline) {
-        int bestIterationScore = -1;
-        std::vector<Move> bestIterationSequence;
-        Move bestIterationMove = legalMoves.front();
-
-        // Recherche explicite sur tous les coups légaux racine.
-        for (const auto& rootMove : legalMoves) {
-            if (std::chrono::steady_clock::now() >= deadline) {
-                break;
-            }
-
-            PlayoutResult result = playout(legalMoves, occupiedPoints, policy, rootMove, maxSteps);
-            if (result.score > bestIterationScore) {
-                bestIterationScore = result.score;
-                bestIterationSequence = result.sequence;
-                bestIterationMove = rootMove;
-            }
-        }
-
-        if (bestIterationScore >= 0 && !bestIterationSequence.empty()) {
-            policy = adapt(policy, bestIterationSequence, legalMoves, occupiedPoints);
-            if (bestIterationScore > bestGlobalScore) {
-                bestGlobalScore = bestIterationScore;
-                bestGlobalMove = bestIterationMove;
-            }
-        }
+    if (level < 0) {
+        level = 0;
+    }
+    if (iterationsPerLevel < 1) {
+        iterationsPerLevel = 1;
+    }
+    if (alpha <= 0.0) {
+        alpha = 0.01;
     }
 
-    return bestGlobalMove;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(maxDuration);
+    SearchContext context{legalMoves, occupiedPoints, maxSteps, iterationsPerLevel, alpha, deadline};
+
+    Policy initialPolicy;
+    PlayoutResult result = nrpa(level, initialPolicy, context);
+
+    if (!result.sequence.empty()) {
+        return result.sequence.front();
+    }
+
+    return legalMoves.front();
 }
 
 PlayoutResult NRPAAlgorithm::playout(const std::vector<Move>& allLegalMoves,
                                      const std::vector<OccupiedPoint>& occupiedPoints,
                                      const Policy& policy,
-                                     const Move& rootMove,
-                                     int maxSteps) {
+                                     int maxSteps,
+                                     std::chrono::steady_clock::time_point deadline) {
     std::vector<Move> sequence;
     SimpleGrid grid;
 
@@ -87,13 +75,11 @@ PlayoutResult NRPAAlgorithm::playout(const std::vector<Move>& allLegalMoves,
         grid.points.insert({point.x, point.y});
     }
 
-    // Coup racine forcé (on évalue chaque coup légal).
-    if (!grid.isOccupied(rootMove.newX, rootMove.newY)) {
-        sequence.push_back(rootMove);
-        grid.addLine(rootMove);
-    }
-
     for (int step = 0; step < maxSteps; ++step) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            break;
+        }
+
         std::vector<Move> legalNow;
         legalNow.reserve(allLegalMoves.size());
 
@@ -113,6 +99,54 @@ PlayoutResult NRPAAlgorithm::playout(const std::vector<Move>& allLegalMoves,
     }
 
     return PlayoutResult{grid.score, sequence};
+}
+
+PlayoutResult NRPAAlgorithm::nrpa(int level,
+                                  const Policy& policy,
+                                  const SearchContext& context) {
+    if (std::chrono::steady_clock::now() >= context.deadline) {
+        return PlayoutResult{-1, {}};
+    }
+
+    if (level <= 0) {
+        return playout(context.legalMoves,
+                       context.occupiedPoints,
+                       policy,
+                       context.maxSteps,
+                       context.deadline);
+    }
+
+    Policy currentPolicy = policy.copy();
+    PlayoutResult bestResult{-1, {}};
+
+    for (int iteration = 0; iteration < context.iterationsPerLevel; ++iteration) {
+        if (std::chrono::steady_clock::now() >= context.deadline) {
+            break;
+        }
+
+        PlayoutResult candidate = nrpa(level - 1, currentPolicy, context);
+        if (candidate.score > bestResult.score) {
+            bestResult = candidate;
+        }
+
+        if (!bestResult.sequence.empty()) {
+            currentPolicy = adapt(currentPolicy,
+                                  bestResult.sequence,
+                                  context.legalMoves,
+                                  context.occupiedPoints,
+                                  context.alpha);
+        }
+    }
+
+    if (bestResult.score < 0) {
+        return playout(context.legalMoves,
+                       context.occupiedPoints,
+                       currentPolicy,
+                       context.maxSteps,
+                       context.deadline);
+    }
+
+    return bestResult;
 }
 
 Move NRPAAlgorithm::selectAction(const std::vector<Move>& legalMoves, const Policy& policy) {
@@ -149,8 +183,8 @@ Move NRPAAlgorithm::selectAction(const std::vector<Move>& legalMoves, const Poli
 Policy NRPAAlgorithm::adapt(const Policy& policy,
                             const std::vector<Move>& sequence,
                             const std::vector<Move>& allLegalMoves,
-                            const std::vector<OccupiedPoint>& occupiedPoints) {
-    constexpr double alpha = 1.0;
+                            const std::vector<OccupiedPoint>& occupiedPoints,
+                            double alpha) {
     Policy updated = policy.copy();
 
     // Approximation de légalité: newPoint non occupé.
