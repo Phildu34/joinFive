@@ -566,8 +566,8 @@ private struct JoinFiveBoardView: View {
     let hintLines: [MoveLine]
     let onTap: (GridCoordinate) -> Void
 
-    private let cellSize: CGFloat = 24
-    private let offset: CGFloat = 24
+    private let cellSize: CGFloat = 50
+    private let offset: CGFloat = 50
     private let tolerance: CGFloat = 0.25
 
     var body: some View {
@@ -628,15 +628,18 @@ private struct JoinFiveBoardView: View {
 
         for line in grid.lines {
             draw(line: line, color: .orange, lineWidth: 2.5, context: &context)
-            if let number = line.number {
-                drawNumber(number, at: line.newPoint, context: &context)
-            }
         }
 
         for point in grid.points {
             let center = CGPoint(x: offset + CGFloat(point.x) * cellSize, y: offset + CGFloat(point.y) * cellSize)
-            let rect = CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8)
+            let rect = CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 14)
             context.fill(Path(ellipseIn: rect), with: .color(.white))
+        }
+
+        for line in grid.lines {
+            if let number = line.number {
+                drawNumber(number, at: line.newPoint, context: &context)
+            }
         }
     }
 
@@ -650,12 +653,13 @@ private struct JoinFiveBoardView: View {
 
     private func drawNumber(_ number: Int, at point: GridCoordinate, context: inout GraphicsContext) {
         let center = CGPoint(x: offset + CGFloat(point.x) * cellSize, y: offset + CGFloat(point.y) * cellSize)
-        let bubble = CGRect(x: center.x - 10, y: center.y - 10, width: 20, height: 20)
+        let radius: CGFloat = 14
+        let bubble = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
 
-        context.fill(Path(ellipseIn: bubble), with: .color(.black.opacity(0.75)))
+        context.fill(Path(ellipseIn: bubble), with: .color(.black.opacity(0.85)))
         context.draw(
             Text("\(number)")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundColor(.white),
             at: center
         )
