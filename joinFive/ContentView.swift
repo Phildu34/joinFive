@@ -531,11 +531,11 @@ private final class JoinFiveViewModel: ObservableObject {
     @Published var scoreHistory: [ScoreEntry] = []
     @Published var showBestGrid = false
     @Published var showHistory = false
-    @Published var nrpaMaxSteps: Int = 200
-    @Published var nrpaMaxDurationMs: Int = 2000
-    @Published var nrpaLevel: Int = 2
-    @Published var nrpaIterationsPerLevel: Int = 8
-    @Published var nrpaAlpha: Double = 0.5
+    @Published var nrpaMaxSteps: Int = 250
+    @Published var nrpaMaxDurationMs: Int = 4000
+    @Published var nrpaLevel: Int = 3
+    @Published var nrpaIterationsPerLevel: Int = 12
+    @Published var nrpaAlpha: Double = 1.0
 
     private var timerTask: Task<Void, Never>?
     private var simulationTask: Task<Void, Never>?
@@ -698,11 +698,11 @@ private final class JoinFiveViewModel: ObservableObject {
     }
 
     nonisolated static func buildAlgorithm(for computer: ComputerType,
-                                           nrpaMaxSteps: Int = 200,
-                                           nrpaMaxDurationMs: Int = 2000,
-                                           nrpaLevel: Int = 2,
-                                           nrpaIterationsPerLevel: Int = 8,
-                                           nrpaAlpha: Double = 0.5) -> any JoinFiveAlgorithm {
+                                           nrpaMaxSteps: Int = 250,
+                                           nrpaMaxDurationMs: Int = 4000,
+                                           nrpaLevel: Int = 3,
+                                           nrpaIterationsPerLevel: Int = 12,
+                                           nrpaAlpha: Double = 1.0) -> any JoinFiveAlgorithm {
         switch computer {
         case .random: return RandomSearchAlgorithm()
         case .nmcs:   return NMCSAlgorithm()
@@ -881,7 +881,7 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         Text("NRPA maxSteps")
                             .font(.caption)
-                        TextField("200", value: $viewModel.nrpaMaxSteps, format: .number)
+                        TextField("250", value: $viewModel.nrpaMaxSteps, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
                     }
@@ -889,7 +889,7 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         Text("NRPA maxDuration(ms)")
                             .font(.caption)
-                        TextField("2000", value: $viewModel.nrpaMaxDurationMs, format: .number)
+                        TextField("4000", value: $viewModel.nrpaMaxDurationMs, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 90)
                     }
@@ -897,7 +897,7 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         Text("NRPA level")
                             .font(.caption)
-                        TextField("2", value: $viewModel.nrpaLevel, format: .number)
+                        TextField("3", value: $viewModel.nrpaLevel, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 60)
                     }
@@ -905,7 +905,7 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         Text("NRPA iterations")
                             .font(.caption)
-                        TextField("8", value: $viewModel.nrpaIterationsPerLevel, format: .number)
+                        TextField("12", value: $viewModel.nrpaIterationsPerLevel, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
                     }
@@ -913,7 +913,7 @@ struct ContentView: View {
                     HStack(spacing: 6) {
                         Text("NRPA alpha")
                             .font(.caption)
-                        TextField("0.5", value: $viewModel.nrpaAlpha, format: .number)
+                        TextField("1.0", value: $viewModel.nrpaAlpha, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
                     }
