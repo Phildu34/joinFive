@@ -45,6 +45,7 @@ struct Move {
 struct OccupiedPoint {
     int x;
     int y;
+    int lockMask = 0; // bit i => direction i déjà verrouillée sur ce point
 };
 
 // Politique avec poids
@@ -85,6 +86,9 @@ public:
     // maxSteps: nombre max de coups simulés par playout
     Move nextMove(const std::vector<Move>& legalMoves,
                   const std::vector<OccupiedPoint>& occupiedPoints,
+                  int gridWidth,
+                  int gridHeight,
+                  int maxLocksPerLine,
                   int maxDuration = 2000,
                   int maxSteps = 200,
                   int level = 2,
@@ -95,6 +99,9 @@ private:
     struct SearchContext {
         const std::vector<Move>& legalMoves;
         const std::vector<OccupiedPoint>& occupiedPoints;
+        int gridWidth;
+        int gridHeight;
+        int maxLocksPerLine;
         int maxSteps;
         int iterationsPerLevel;
         double alpha;
@@ -107,6 +114,9 @@ private:
     PlayoutResult playout(const std::vector<Move>& legalMoves,
                          const std::vector<OccupiedPoint>& occupiedPoints,
                          const Policy& policy,
+                         int gridWidth,
+                         int gridHeight,
+                         int maxLocksPerLine,
                          int maxSteps,
                          std::chrono::steady_clock::time_point deadline);
 
@@ -124,6 +134,9 @@ private:
                  const std::vector<Move>& sequence,
                  const std::vector<Move>& allLegalMoves,
                  const std::vector<OccupiedPoint>& occupiedPoints,
+                 int gridWidth,
+                 int gridHeight,
+                 int maxLocksPerLine,
                  double alpha);
 };
 

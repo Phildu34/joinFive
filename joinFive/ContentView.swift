@@ -438,14 +438,19 @@ private struct NRPAAlgorithm: JoinFiveAlgorithm {
         }
 
         let occupiedPayload: [[String: NSNumber]] = grid.points.map { point in
-            [
+            let lockMask = Self.lockMask(for: point, in: grid)
+            return [
                 "x": NSNumber(value: point.x),
-                "y": NSNumber(value: point.y)
+                "y": NSNumber(value: point.y),
+                "lockMask": NSNumber(value: lockMask)
             ]
         }
 
         guard let result = NRPABridge.nextMove(withLegalMoves: payload,
                                                occupiedPoints: occupiedPayload,
+                                               gridWidth: grid.width,
+                                               gridHeight: grid.height,
+                                               maxLocksPerLine: grid.mode == .fiveT ? 1 : 0,
                                                maxDuration: maxDurationMs,
                                                maxSteps: maxSteps,
                                                level: level,
@@ -475,6 +480,15 @@ private struct NRPAAlgorithm: JoinFiveAlgorithm {
         case .fall: return 2
         case .rise: return 3
         }
+    }
+
+    private static func lockMask(for point: GridCoordinate, in grid: GridState) -> Int {
+        guard let directions = grid.locks[point] else { return 0 }
+        var mask = 0
+        for direction in directions {
+            mask |= (1 << directionToInt(direction))
+        }
+        return mask
     }
 }
 

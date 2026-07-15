@@ -7,6 +7,9 @@ using namespace JoinFive;
 
 + (NSDictionary *)nextMoveWithLegalMoves:(NSArray *)legalMovesArray
                          occupiedPoints:(NSArray *)occupiedPointsArray
+                              gridWidth:(NSInteger)gridWidth
+                             gridHeight:(NSInteger)gridHeight
+                        maxLocksPerLine:(NSInteger)maxLocksPerLine
                               maxDuration:(NSInteger)ms
                                  maxSteps:(NSInteger)maxSteps
                                     level:(NSInteger)level
@@ -34,6 +37,8 @@ using namespace JoinFive;
         OccupiedPoint p;
         p.x = [pointDict[@"x"] intValue];
         p.y = [pointDict[@"y"] intValue];
+        NSNumber *lockMaskValue = pointDict[@"lockMask"];
+        p.lockMask = lockMaskValue != nil ? [lockMaskValue intValue] : 0;
         occupiedPoints.push_back(p);
     }
     
@@ -45,6 +50,9 @@ using namespace JoinFive;
     NRPAAlgorithm algo;
     Move result = algo.nextMove(moves,
                                 occupiedPoints,
+                                (int)gridWidth,
+                                (int)gridHeight,
+                                (int)maxLocksPerLine,
                                 (int)ms,
                                 (int)maxSteps,
                                 (int)level,
@@ -53,11 +61,7 @@ using namespace JoinFive;
     
     bool foundInLegalMoves = false;
     for (const Move &candidate : moves) {
-        if (candidate.startX == result.startX &&
-            candidate.startY == result.startY &&
-            candidate.endX == result.endX &&
-            candidate.endY == result.endY &&
-            candidate.newX == result.newX &&
+        if (candidate.newX == result.newX &&
             candidate.newY == result.newY &&
             candidate.direction == result.direction) {
             foundInLegalMoves = true;

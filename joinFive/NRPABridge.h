@@ -13,6 +13,9 @@ NS_ASSUME_NONNULL_BEGIN
 // maxDuration: durée max en millisecondes
 + (nullable NSDictionary *)nextMoveWithLegalMoves:(NSArray<NSDictionary *> *)legalMovesArray
                                  occupiedPoints:(NSArray<NSDictionary *> *)occupiedPointsArray
+                                       gridWidth:(NSInteger)gridWidth
+                                      gridHeight:(NSInteger)gridHeight
+                                 maxLocksPerLine:(NSInteger)maxLocksPerLine
                                        maxDuration:(NSInteger)ms
                                            maxSteps:(NSInteger)maxSteps
                                               level:(NSInteger)level
