@@ -456,16 +456,20 @@ Policy NRPAAlgorithm::adapt(const Policy& policy,
 
         updated.adjust(chosen, alpha);
 
+        // Le gradient softmax doit être calculé à partir de la politique
+        // d'origine (pol dans l'article de Rosin), et non à partir de la
+        // politique en cours de mise à jour (polp) : sinon le poids du coup
+        // choisi, déjà incrémenté de alpha ci-dessus, biaise la distribution.
         double maxWeight = -std::numeric_limits<double>::infinity();
         for (const auto& move : legalNow) {
-            maxWeight = std::max(maxWeight, updated.weight(move));
+            maxWeight = std::max(maxWeight, policy.weight(move));
         }
 
         double z = 0.0;
         std::vector<double> expValues;
         expValues.reserve(legalNow.size());
         for (const auto& move : legalNow) {
-            const double v = std::exp(updated.weight(move) - maxWeight);
+            const double v = std::exp(policy.weight(move) - maxWeight);
             expValues.push_back(v);
             z += v;
         }
