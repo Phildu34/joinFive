@@ -413,100 +413,50 @@ private struct NMCSAlgorithm: JoinFiveAlgorithm {
 private struct NRPAAlgorithm: JoinFiveAlgorithm {
     let name = "NRPA"
 
-    private struct Policy {
-        private var weights: [String: Double] = [:]
-
-        mutating func adjust(_ line: MoveLine, by value: Double) {
-            let key = line.id
-            weights[key] = (weights[key] ?? 0.0) + value
-        }
-
-        func weight(for line: MoveLine) -> Double {
-            weights[line.id] ?? 0.0
-        }
-    }
-
     func nextMove(on grid: GridState) -> MoveLine? {
-        let deadline = Date().addingTimeInterval(2.0)
-        var policy = Policy()
-        var bestScore = grid.score
-        var bestSequence: [MoveLine] = []
+        let legalMoves = grid.possibleLinesAroundExistingPoints()
+        guard !legalMoves.isEmpty else { return nil }
 
-        while Date() < deadline {
-            let (score, sequence) = playout(from: grid, policy: policy)
-            if score >= bestScore {
-                bestScore = score
-                bestSequence = sequence
-                policy = adapt(policy: policy, from: grid, sequence: sequence)
-            }
+        let payload: [[String: NSNumber]] = legalMoves.map { line in
+            let start = line.points.first ?? line.newPoint
+            let end = line.points.last ?? line.newPoint
+            return [
+                "startX": NSNumber(value: start.x),
+                "startY": NSNumber(value: start.y),
+                "endX": NSNumber(value: end.x),
+                "endY": NSNumber(value: end.y),
+                "newX": NSNumber(value: line.newPoint.x),
+                "newY": NSNumber(value: line.newPoint.y),
+                "direction": NSNumber(value: Self.directionToInt(line.direction)),
+                "moveNumber": NSNumber(value: line.number ?? 0)
+            ]
         }
 
-        return bestSequence.first
+        guard let result = NRPABridge.nextMove(withLegalMoves: payload, maxDuration: 2000) else {
+            return legalMoves.randomElement()
+        }
+
+        let newX = (result["newX"] as? NSNumber)?.intValue
+        let newY = (result["newY"] as? NSNumber)?.intValue
+        let dirInt = (result["direction"] as? NSNumber)?.intValue
+        guard let newX, let newY, let dirInt else {
+            return legalMoves.randomElement()
+        }
+
+        return legalMoves.first {
+            $0.newPoint.x == newX &&
+            $0.newPoint.y == newY &&
+            Self.directionToInt($0.direction) == dirInt
+        } ?? legalMoves.randomElement()
     }
 
-    private func playout(from grid: GridState, policy: Policy) -> (Int, [MoveLine]) {
-        var state = grid
-        var sequence: [MoveLine] = []
-
-        while true {
-            let legal = state.possibleLinesAroundExistingPoints()
-            guard !legal.isEmpty else { break }
-
-            let selected = selectAction(from: legal, policy: policy)
-            sequence.append(selected)
-            state.addLine(selected)
+    private static func directionToInt(_ direction: Direction) -> Int {
+        switch direction {
+        case .horizontal: return 0
+        case .vertical: return 1
+        case .fall: return 2
+        case .rise: return 3
         }
-
-        return (state.score, sequence)
-    }
-
-    private func selectAction(from legal: [MoveLine], policy: Policy) -> MoveLine {
-        var cumulative: [Double] = []
-        cumulative.reserveCapacity(legal.count)
-        var sum = 0.0
-
-        for line in legal {
-            let weight = exp(policy.weight(for: line))
-            sum += weight
-            cumulative.append(sum)
-        }
-
-        guard sum > 0 else {
-            return legal.randomElement() ?? legal[0]
-        }
-
-        let randomValue = Double.random(in: 0..<sum)
-        for (index, value) in cumulative.enumerated() where value >= randomValue {
-            return legal[index]
-        }
-
-        return legal[legal.count - 1]
-    }
-
-    private func adapt(policy: Policy, from grid: GridState, sequence: [MoveLine]) -> Policy {
-        let alpha = 1.0
-        var updated = policy
-        var state = grid
-
-        for chosen in sequence {
-            updated.adjust(chosen, by: alpha)
-
-            let legal = state.possibleLinesAroundExistingPoints()
-            let z = legal.reduce(0.0) { partial, line in
-                partial + exp(policy.weight(for: line))
-            }
-
-            if z > 0 {
-                for line in legal {
-                    let reduction = alpha * exp(policy.weight(for: line)) / z
-                    updated.adjust(line, by: -reduction)
-                }
-            }
-
-            state.addLine(chosen)
-        }
-
-        return updated
     }
 }
 
