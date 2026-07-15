@@ -33,6 +33,12 @@ struct Move {
     }
 };
 
+// Point déjà occupé dans la grille courante.
+struct OccupiedPoint {
+    int x;
+    int y;
+};
+
 // Politique avec poids
 class Policy {
 private:
@@ -70,6 +76,7 @@ public:
     // maxDuration: durée max en millisecondes
     // maxSteps: nombre max de coups simulés par playout
     Move nextMove(const std::vector<Move>& legalMoves,
+                  const std::vector<OccupiedPoint>& occupiedPoints,
                   int maxDuration = 2000,
                   int maxSteps = 200);
 
@@ -78,6 +85,7 @@ private:
 
     // Simule une partie complète avec un coup racine forcé.
     PlayoutResult playout(const std::vector<Move>& legalMoves,
+                         const std::vector<OccupiedPoint>& occupiedPoints,
                          const Policy& policy,
                          const Move& rootMove,
                          int maxSteps);
@@ -89,7 +97,8 @@ private:
     // de tous les coups légaux encore disponibles à chaque ply.
     Policy adapt(const Policy& policy,
                  const std::vector<Move>& sequence,
-                 const std::vector<Move>& allLegalMoves);
+                 const std::vector<Move>& allLegalMoves,
+                 const std::vector<OccupiedPoint>& occupiedPoints);
 };
 
 } // namespace JoinFive

@@ -434,7 +434,15 @@ private struct NRPAAlgorithm: JoinFiveAlgorithm {
             ]
         }
 
+        let occupiedPayload: [[String: NSNumber]] = grid.points.map { point in
+            [
+                "x": NSNumber(value: point.x),
+                "y": NSNumber(value: point.y)
+            ]
+        }
+
         guard let result = NRPABridge.nextMove(withLegalMoves: payload,
+                                               occupiedPoints: occupiedPayload,
                                                maxDuration: maxDurationMs,
                                                maxSteps: maxSteps) else {
             return legalMoves.randomElement()
@@ -481,11 +489,11 @@ private final class JoinFiveViewModel: ObservableObject {
         var id: String { rawValue }
     }
 
-    @Published var grid = GridState()
-    @Published var mode: GameMode = .fiveD
-    @Published var player: PlayerType = .human
-    @Published var computer: ComputerType = .random
-    @Published var showHints = false
+    @Published var grid = GridState(mode: .fiveT)
+    @Published var mode: GameMode = .fiveT
+    @Published var player: PlayerType = .computer
+    @Published var computer: ComputerType = .nrpa
+    @Published var showHints = true
     @Published var lineChoices: [MoveLine] = []
     @Published var elapsedTime: TimeInterval = 0
     @Published var isComputerRunning = false
@@ -837,7 +845,9 @@ struct ContentView: View {
                             .frame(width: 90)
                     }
                 }
-
+            }
+            Spacer()
+            HStack(spacing: 12) {
                 Button(viewModel.isComputerRunning ? "Stop" : "Simuler") {
                     viewModel.toggleComputerSimulation()
                 }

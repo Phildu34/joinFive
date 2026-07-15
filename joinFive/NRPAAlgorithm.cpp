@@ -22,7 +22,10 @@ struct SimpleGrid {
 };
 } // namespace
 
-Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves, int maxDuration, int maxSteps) {
+Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves,
+                             const std::vector<OccupiedPoint>& occupiedPoints,
+                             int maxDuration,
+                             int maxSteps) {
     if (legalMoves.empty()) {
         return Move();
     }
@@ -51,7 +54,7 @@ Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves, int maxDuratio
                 break;
             }
 
-            PlayoutResult result = playout(legalMoves, policy, rootMove, maxSteps);
+            PlayoutResult result = playout(legalMoves, occupiedPoints, policy, rootMove, maxSteps);
             if (result.score > bestIterationScore) {
                 bestIterationScore = result.score;
                 bestIterationSequence = result.sequence;
@@ -60,7 +63,7 @@ Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves, int maxDuratio
         }
 
         if (bestIterationScore >= 0 && !bestIterationSequence.empty()) {
-            policy = adapt(policy, bestIterationSequence, legalMoves);
+            policy = adapt(policy, bestIterationSequence, legalMoves, occupiedPoints);
             if (bestIterationScore > bestGlobalScore) {
                 bestGlobalScore = bestIterationScore;
                 bestGlobalMove = bestIterationMove;
@@ -72,17 +75,16 @@ Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves, int maxDuratio
 }
 
 PlayoutResult NRPAAlgorithm::playout(const std::vector<Move>& allLegalMoves,
+                                     const std::vector<OccupiedPoint>& occupiedPoints,
                                      const Policy& policy,
                                      const Move& rootMove,
                                      int maxSteps) {
     std::vector<Move> sequence;
     SimpleGrid grid;
 
-    // Seed minimal: points déjà présents.
-    for (const auto& move : allLegalMoves) {
-        if (move.moveNumber == 0) {
-            grid.points.insert({move.newX, move.newY});
-        }
+    // État initial explicite: toutes les cases déjà occupées dans la grille courante.
+    for (const auto& point : occupiedPoints) {
+        grid.points.insert({point.x, point.y});
     }
 
     // Coup racine forcé (on évalue chaque coup légal).
@@ -146,16 +148,15 @@ Move NRPAAlgorithm::selectAction(const std::vector<Move>& legalMoves, const Poli
 
 Policy NRPAAlgorithm::adapt(const Policy& policy,
                             const std::vector<Move>& sequence,
-                            const std::vector<Move>& allLegalMoves) {
+                            const std::vector<Move>& allLegalMoves,
+                            const std::vector<OccupiedPoint>& occupiedPoints) {
     constexpr double alpha = 1.0;
     Policy updated = policy.copy();
 
     // Approximation de légalité: newPoint non occupé.
     std::set<std::pair<int, int>> occupied;
-    for (const auto& move : allLegalMoves) {
-        if (move.moveNumber == 0) {
-            occupied.insert({move.newX, move.newY});
-        }
+    for (const auto& point : occupiedPoints) {
+        occupied.insert({point.x, point.y});
     }
 
     for (const auto& chosen : sequence) {
@@ -171,12 +172,12 @@ Policy NRPAAlgorithm::adapt(const Policy& policy,
 
         double z = 0.0;
         for (const auto& move : legalNow) {
-            z += std::exp(policy.weight(move));
+            z += std::exp(updated.weight(move));
         }
 
         if (z > 0.0) {
             for (const auto& move : legalNow) {
-                const double reduction = alpha * std::exp(policy.weight(move)) / z;
+                const double reduction = alpha * std::exp(updated.weight(move)) / z;
                 updated.adjust(move, -reduction);
             }
         }

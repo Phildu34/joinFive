@@ -6,6 +6,7 @@ using namespace JoinFive;
 @implementation NRPABridge
 
 + (NSDictionary *)nextMoveWithLegalMoves:(NSArray *)legalMovesArray
+                         occupiedPoints:(NSArray *)occupiedPointsArray
                               maxDuration:(NSInteger)ms
                                  maxSteps:(NSInteger)maxSteps {
     
@@ -24,6 +25,14 @@ using namespace JoinFive;
         m.moveNumber = [moveDict[@"moveNumber"] intValue];
         moves.push_back(m);
     }
+
+    std::vector<OccupiedPoint> occupiedPoints;
+    for (NSDictionary *pointDict in occupiedPointsArray) {
+        OccupiedPoint p;
+        p.x = [pointDict[@"x"] intValue];
+        p.y = [pointDict[@"y"] intValue];
+        occupiedPoints.push_back(p);
+    }
     
     if (moves.empty()) {
         return nil;
@@ -31,7 +40,7 @@ using namespace JoinFive;
     
     // Appeler l'algorithme C++
     NRPAAlgorithm algo;
-    Move result = algo.nextMove(moves, (int)ms, (int)maxSteps);
+    Move result = algo.nextMove(moves, occupiedPoints, (int)ms, (int)maxSteps);
     
     // Vérifier que le résultat n'est pas un Move vide
     if (result.newX == 0 && result.newY == 0 && moves.size() > 0 &&
