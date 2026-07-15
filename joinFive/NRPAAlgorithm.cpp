@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -127,94 +126,156 @@ struct SimpleGrid {
     }
 };
 
-std::vector<Move> generateLegalMoves(const SimpleGrid& grid,
-                                     int gridWidth,
-                                     int gridHeight,
-                                     int maxLocksPerLine) {
-    std::unordered_set<std::pair<int, int>, PairHash> candidateCells;
-
-    for (const auto& point : grid.points) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            for (int dy = -1; dy <= 1; ++dy) {
-                if (dx == 0 && dy == 0) {
-                    continue;
-                }
-
-                const int nx = point.first + dx;
-                const int ny = point.second + dy;
-                if (!grid.inBounds(nx, ny, gridWidth, gridHeight)) {
-                    continue;
-                }
-                if (!grid.isOccupied(nx, ny)) {
-                    candidateCells.insert({nx, ny});
-                }
-            }
-        }
+// Génère tous les coups légaux dont le point posé est la case (cx, cy).
+// Pour une case et une direction données, chaque fenêtre (indice i) produit
+// une clé distincte, et chaque direction/point posé aussi : aucun doublon
+// possible, donc pas besoin de déduplication.
+void movesAtCell(const SimpleGrid& grid,
+                 int cx,
+                 int cy,
+                 int width,
+                 int height,
+                 int maxLocksPerLine,
+                 std::vector<Move>& out) {
+    if (grid.isOccupied(cx, cy)) {
+        return;
     }
 
-    std::vector<Move> result;
-    std::unordered_set<std::uint64_t> seen;
+    for (int direction = 0; direction < kDirectionCount; ++direction) {
+        const auto delta = deltaForDirection(direction);
 
-    for (const auto& candidate : candidateCells) {
-        for (int direction = 0; direction < kDirectionCount; ++direction) {
-            const auto delta = deltaForDirection(direction);
+        for (int i = -4; i <= 0; ++i) {
+            int remainingLocks = std::max(0, maxLocksPerLine);
+            bool isValidLine = true;
 
-            for (int i = -4; i <= 0; ++i) {
-                int remainingLocks = std::max(0, maxLocksPerLine);
-                bool isValidLine = true;
+            for (int j = 0; j < 5; ++j) {
+                const int x = cx + delta.first * (i + j);
+                const int y = cy + delta.second * (i + j);
 
-                // Parcourt la fenêtre de 5 cases sans matérialiser de vecteur :
-                // la validité (bornes, occupation, verrous) est vérifiée ici,
-                // ce qui rend le contrôle isMoveLegal ultérieur superflu.
-                for (int j = 0; j < 5; ++j) {
-                    const int x = candidate.first + delta.first * (i + j);
-                    const int y = candidate.second + delta.second * (i + j);
+                if (!grid.inBounds(x, y, width, height)) {
+                    isValidLine = false;
+                    break;
+                }
 
-                    if (!grid.inBounds(x, y, gridWidth, gridHeight)) {
+                if (x == cx && y == cy) {
+                    continue; // point nouvellement posé
+                }
+
+                if (!grid.isOccupied(x, y)) {
+                    isValidLine = false;
+                    break;
+                }
+
+                if (grid.isLocked(x, y, direction)) {
+                    if (remainingLocks <= 0) {
                         isValidLine = false;
                         break;
                     }
-
-                    if (x == candidate.first && y == candidate.second) {
-                        continue; // point nouvellement posé
-                    }
-
-                    if (!grid.isOccupied(x, y)) {
-                        isValidLine = false;
-                        break;
-                    }
-
-                    if (grid.isLocked(x, y, direction)) {
-                        if (remainingLocks <= 0) {
-                            isValidLine = false;
-                            break;
-                        }
-                        remainingLocks--;
-                    }
-                }
-
-                if (!isValidLine) {
-                    continue;
-                }
-
-                Move move(candidate.first + delta.first * i,
-                          candidate.second + delta.second * i,
-                          candidate.first + delta.first * (i + 4),
-                          candidate.second + delta.second * (i + 4),
-                          candidate.first,
-                          candidate.second,
-                          direction,
-                          0);
-
-                if (seen.insert(move.key()).second) {
-                    result.push_back(move);
+                    remainingLocks--;
                 }
             }
+
+            if (!isValidLine) {
+                continue;
+            }
+
+            out.emplace_back(cx + delta.first * i,
+                             cy + delta.second * i,
+                             cx + delta.first * (i + 4),
+                             cy + delta.second * (i + 4),
+                             cx,
+                             cy,
+                             direction,
+                             0);
         }
     }
-
-    return result;
 }
+
+// Index incrémental des coups légaux, groupés par case de point posé.
+// Après l'ajout d'une ligne, seules les cases localement affectées sont
+// réévaluées, ce qui évite un balayage complet de la grille à chaque coup.
+class LegalMoveIndex {
+public:
+    // Initialise l'index à partir de l'ensemble complet des coups légaux de
+    // l'état courant.
+    void init(const std::vector<Move>& initialLegal) {
+        movesByCell.clear();
+        for (const auto& move : initialLegal) {
+            movesByCell[cellKey(move.newX, move.newY)].push_back(move);
+        }
+        rebuildFlat();
+    }
+
+    const std::vector<Move>& moves() const { return flat; }
+    bool empty() const { return flat.empty(); }
+
+    // Met à jour l'index après que `line` a été appliquée à `grid`.
+    void applyLine(const SimpleGrid& grid,
+                   const Move& line,
+                   int width,
+                   int height,
+                   int maxLocksPerLine) {
+        const auto lineDelta = deltaForDirection(line.direction);
+
+        // Le point posé devient occupé : aucun coup ne peut plus s'y poser.
+        movesByCell.erase(cellKey(line.newX, line.newY));
+
+        // Cases à réévaluer : toute case vide colinéaire (offset -4..4, dans
+        // les 4 directions) avec l'une des 5 cases de la ligne ajoutée. C'est
+        // exactement l'ensemble des points posés dont une fenêtre possible
+        // recouvre la ligne (changement d'occupation ou de verrou).
+        std::unordered_set<std::pair<int, int>, PairHash> dirty;
+        for (int k = 0; k < 5; ++k) {
+            const int qx = line.startX + lineDelta.first * k;
+            const int qy = line.startY + lineDelta.second * k;
+
+            for (int d = 0; d < kDirectionCount; ++d) {
+                const auto delta = deltaForDirection(d);
+                for (int o = -4; o <= 4; ++o) {
+                    const int cx = qx + delta.first * o;
+                    const int cy = qy + delta.second * o;
+                    if (!grid.inBounds(cx, cy, width, height)) {
+                        continue;
+                    }
+                    if (grid.isOccupied(cx, cy)) {
+                        continue;
+                    }
+                    dirty.insert({cx, cy});
+                }
+            }
+        }
+
+        for (const auto& cell : dirty) {
+            std::vector<Move> cellMoves;
+            movesAtCell(grid, cell.first, cell.second, width, height, maxLocksPerLine, cellMoves);
+
+            const std::uint64_t key = cellKey(cell.first, cell.second);
+            if (cellMoves.empty()) {
+                movesByCell.erase(key);
+            } else {
+                movesByCell[key] = std::move(cellMoves);
+            }
+        }
+
+        rebuildFlat();
+    }
+
+private:
+    static std::uint64_t cellKey(int x, int y) {
+        return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(x)) << 32)
+             | static_cast<std::uint64_t>(static_cast<std::uint32_t>(y));
+    }
+
+    void rebuildFlat() {
+        flat.clear();
+        for (const auto& entry : movesByCell) {
+            flat.insert(flat.end(), entry.second.begin(), entry.second.end());
+        }
+    }
+
+    std::unordered_map<std::uint64_t, std::vector<Move>> movesByCell;
+    std::vector<Move> flat;
+};
 
 std::vector<Move> filterLegalMoves(const std::vector<Move>& moves,
                                    const SimpleGrid& grid,
@@ -311,22 +372,24 @@ PlayoutResult NRPAAlgorithm::playout(const std::vector<Move>& allLegalMoves,
         }
     }
 
-    auto legalNow = filterLegalMoves(allLegalMoves, grid, gridWidth, gridHeight, maxLocksPerLine);
+    LegalMoveIndex legal;
+    legal.init(filterLegalMoves(allLegalMoves, grid, gridWidth, gridHeight, maxLocksPerLine));
 
     for (int step = 0; step < maxSteps; ++step) {
         if (std::chrono::steady_clock::now() >= deadline) {
             break;
         }
 
-        if (legalNow.empty()) {
+        if (legal.empty()) {
             break;
         }
 
-        Move selected = selectAction(legalNow, policy);
+        Move selected = selectAction(legal.moves(), policy);
         sequence.push_back(selected);
         grid.addLine(selected);
 
-        legalNow = generateLegalMoves(grid, gridWidth, gridHeight, maxLocksPerLine);
+        // Mise à jour incrémentale: seules les cases affectées sont réévaluées.
+        legal.applyLine(grid, selected, gridWidth, gridHeight, maxLocksPerLine);
     }
 
     return PlayoutResult{grid.score, sequence};
@@ -443,14 +506,12 @@ Policy NRPAAlgorithm::adapt(const Policy& policy,
         }
     }
 
+    LegalMoveIndex legal;
+    legal.init(filterLegalMoves(allLegalMoves, grid, gridWidth, gridHeight, maxLocksPerLine));
+
     for (size_t step = 0; step < sequence.size(); ++step) {
         const Move& chosen = sequence[step];
-        std::vector<Move> legalNow;
-        if (step == 0) {
-            legalNow = filterLegalMoves(allLegalMoves, grid, gridWidth, gridHeight, maxLocksPerLine);
-        } else {
-            legalNow = generateLegalMoves(grid, gridWidth, gridHeight, maxLocksPerLine);
-        }
+        const std::vector<Move>& legalNow = legal.moves();
 
         if (legalNow.empty()) {
             break;
@@ -479,8 +540,7 @@ Policy NRPAAlgorithm::adapt(const Policy& policy,
         if (z > 0.0) {
             for (size_t i = 0; i < legalNow.size(); ++i) {
                 const double reduction = alpha * expValues[i] / z;
-                const Move& move = legalNow[i];
-                updated.adjust(move, -reduction);
+                updated.adjust(legalNow[i], -reduction);
             }
         }
 
@@ -488,6 +548,7 @@ Policy NRPAAlgorithm::adapt(const Policy& policy,
             break;
         }
         grid.addLine(chosen);
+        legal.applyLine(grid, chosen, gridWidth, gridHeight, maxLocksPerLine);
     }
 
     return updated;
