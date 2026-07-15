@@ -11,7 +11,8 @@ NS_ASSUME_NONNULL_BEGIN
 // legalMovesArray: array de dictionnaires avec {startX, startY, endX, endY, newX, newY, direction, moveNumber}
 // maxDuration: durée max en millisecondes
 + (nullable NSDictionary *)nextMoveWithLegalMoves:(NSArray<NSDictionary *> *)legalMovesArray
-                                          maxDuration:(NSInteger)ms;
+                                       maxDuration:(NSInteger)ms
+                                          maxSteps:(NSInteger)maxSteps;
 
 @end
 

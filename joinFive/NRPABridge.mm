@@ -6,7 +6,8 @@ using namespace JoinFive;
 @implementation NRPABridge
 
 + (NSDictionary *)nextMoveWithLegalMoves:(NSArray *)legalMovesArray
-                               maxDuration:(NSInteger)ms {
+                              maxDuration:(NSInteger)ms
+                                 maxSteps:(NSInteger)maxSteps {
     
     // Convertir NSArray en vecteur C++ de Move
     std::vector<Move> moves;
@@ -30,7 +31,7 @@ using namespace JoinFive;
     
     // Appeler l'algorithme C++
     NRPAAlgorithm algo;
-    Move result = algo.nextMove(moves, (int)ms);
+    Move result = algo.nextMove(moves, (int)ms, (int)maxSteps);
     
     // Vérifier que le résultat n'est pas un Move vide
     if (result.newX == 0 && result.newY == 0 && moves.size() > 0 &&

@@ -22,9 +22,16 @@ struct SimpleGrid {
 };
 } // namespace
 
-Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves, int maxDuration) {
+Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves, int maxDuration, int maxSteps) {
     if (legalMoves.empty()) {
         return Move();
+    }
+
+    if (maxDuration < 1) {
+        maxDuration = 1;
+    }
+    if (maxSteps < 1) {
+        maxSteps = 1;
     }
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(maxDuration);
@@ -44,7 +51,7 @@ Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves, int maxDuratio
                 break;
             }
 
-            PlayoutResult result = playout(legalMoves, policy, rootMove);
+            PlayoutResult result = playout(legalMoves, policy, rootMove, maxSteps);
             if (result.score > bestIterationScore) {
                 bestIterationScore = result.score;
                 bestIterationSequence = result.sequence;
@@ -66,7 +73,8 @@ Move NRPAAlgorithm::nextMove(const std::vector<Move>& legalMoves, int maxDuratio
 
 PlayoutResult NRPAAlgorithm::playout(const std::vector<Move>& allLegalMoves,
                                      const Policy& policy,
-                                     const Move& rootMove) {
+                                     const Move& rootMove,
+                                     int maxSteps) {
     std::vector<Move> sequence;
     SimpleGrid grid;
 
@@ -83,7 +91,6 @@ PlayoutResult NRPAAlgorithm::playout(const std::vector<Move>& allLegalMoves,
         grid.addLine(rootMove);
     }
 
-    constexpr int maxSteps = 200;
     for (int step = 0; step < maxSteps; ++step) {
         std::vector<Move> legalNow;
         legalNow.reserve(allLegalMoves.size());

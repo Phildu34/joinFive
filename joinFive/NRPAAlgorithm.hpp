@@ -68,7 +68,10 @@ public:
     // grid: état sérialisé (voir plus bas)
     // legalMoves: tous les coups légaux à partir de l'état courant
     // maxDuration: durée max en millisecondes
-    Move nextMove(const std::vector<Move>& legalMoves, int maxDuration = 2000);
+    // maxSteps: nombre max de coups simulés par playout
+    Move nextMove(const std::vector<Move>& legalMoves,
+                  int maxDuration = 2000,
+                  int maxSteps = 200);
 
 private:
     std::mt19937 rng{std::random_device{}()};
@@ -76,7 +79,8 @@ private:
     // Simule une partie complète avec un coup racine forcé.
     PlayoutResult playout(const std::vector<Move>& legalMoves,
                          const Policy& policy,
-                         const Move& rootMove);
+                         const Move& rootMove,
+                         int maxSteps);
 
     // Sélectionne une action selon la politique softmax
     Move selectAction(const std::vector<Move>& legalMoves, const Policy& policy);

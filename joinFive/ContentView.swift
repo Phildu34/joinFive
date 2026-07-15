@@ -412,6 +412,8 @@ private struct NMCSAlgorithm: JoinFiveAlgorithm {
 
 private struct NRPAAlgorithm: JoinFiveAlgorithm {
     let name = "NRPA"
+    let maxDurationMs: Int
+    let maxSteps: Int
 
     func nextMove(on grid: GridState) -> MoveLine? {
         let legalMoves = grid.possibleLinesAroundExistingPoints()
@@ -432,7 +434,9 @@ private struct NRPAAlgorithm: JoinFiveAlgorithm {
             ]
         }
 
-        guard let result = NRPABridge.nextMove(withLegalMoves: payload, maxDuration: 2000) else {
+        guard let result = NRPABridge.nextMove(withLegalMoves: payload,
+                                               maxDuration: maxDurationMs,
+                                               maxSteps: maxSteps) else {
             return legalMoves.randomElement()
         }
 
@@ -491,6 +495,8 @@ private final class JoinFiveViewModel: ObservableObject {
     @Published var scoreHistory: [ScoreEntry] = []
     @Published var showBestGrid = false
     @Published var showHistory = false
+    @Published var nrpaMaxSteps: Int = 200
+    @Published var nrpaMaxDurationMs: Int = 2000
 
     private var timerTask: Task<Void, Never>?
     private var simulationTask: Task<Void, Never>?
@@ -564,13 +570,15 @@ private final class JoinFiveViewModel: ObservableObject {
             guard let self else { return }
             while !Task.isCancelled {
                 // Lecture de l'état sur le MainActor
-                let (snapshot, computerType, isRunning) = await MainActor.run {
-                    (self.grid, self.computer, self.isComputerRunning)
+                let (snapshot, computerType, isRunning, nrpaMaxSteps, nrpaMaxDurationMs) = await MainActor.run {
+                    (self.grid, self.computer, self.isComputerRunning, self.nrpaMaxSteps, self.nrpaMaxDurationMs)
                 }
                 guard isRunning else { break }
 
                 // Calcul du prochain coup sur le thread courant (background)
-                let algo = JoinFiveViewModel.buildAlgorithm(for: computerType)
+                let algo = JoinFiveViewModel.buildAlgorithm(for: computerType,
+                                                            nrpaMaxSteps: nrpaMaxSteps,
+                                                            nrpaMaxDurationMs: nrpaMaxDurationMs)
                 let next = algo.nextMove(on: snapshot)
 
                 // Mise à jour de l'état sur le MainActor
@@ -640,11 +648,15 @@ private final class JoinFiveViewModel: ObservableObject {
         JoinFiveViewModel.buildAlgorithm(for: computer)
     }
 
-    nonisolated static func buildAlgorithm(for computer: ComputerType) -> any JoinFiveAlgorithm {
+    nonisolated static func buildAlgorithm(for computer: ComputerType,
+                                           nrpaMaxSteps: Int = 200,
+                                           nrpaMaxDurationMs: Int = 2000) -> any JoinFiveAlgorithm {
         switch computer {
         case .random: return RandomSearchAlgorithm()
         case .nmcs:   return NMCSAlgorithm()
-        case .nrpa:   return NRPAAlgorithm()
+        case .nrpa:
+            return NRPAAlgorithm(maxDurationMs: max(1, nrpaMaxDurationMs),
+                                 maxSteps: max(1, nrpaMaxSteps))
         }
     }
 }
@@ -807,6 +819,24 @@ struct ContentView: View {
                 }
                 .frame(width: 170)
                 .disabled(viewModel.player == .human)
+
+                if viewModel.player == .computer {
+                    HStack(spacing: 6) {
+                        Text("NRPA maxSteps")
+                            .font(.caption)
+                        TextField("200", value: $viewModel.nrpaMaxSteps, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 80)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("NRPA maxDuration(ms)")
+                            .font(.caption)
+                        TextField("2000", value: $viewModel.nrpaMaxDurationMs, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 90)
+                    }
+                }
 
                 Button(viewModel.isComputerRunning ? "Stop" : "Simuler") {
                     viewModel.toggleComputerSimulation()
