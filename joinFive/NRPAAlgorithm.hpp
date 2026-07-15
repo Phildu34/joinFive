@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <string>
 #include <cmath>
+#include <cstdint>
 #include <random>
 #include <chrono>
 
@@ -33,6 +34,20 @@ struct Move {
                std::to_string(direction);
     }
 
+    // Identité compacte d'un coup pour indexer la politique et dédupliquer.
+    // (startX, startY, direction) fixe la ligne (end = start + 4*delta) et
+    // (newX, newY) le point posé : cela reproduit exactement la relation
+    // d'égalité de id() sans allouer de chaîne. 15 bits par coordonnée
+    // suffisent très largement pour toute grille réaliste (< 32768).
+    std::uint64_t key() const {
+        constexpr std::uint64_t kMask = 0x7FFF; // 15 bits
+        return (static_cast<std::uint64_t>(startX) & kMask)
+             | ((static_cast<std::uint64_t>(startY) & kMask) << 15)
+             | ((static_cast<std::uint64_t>(newX) & kMask) << 30)
+             | ((static_cast<std::uint64_t>(newY) & kMask) << 45)
+             | ((static_cast<std::uint64_t>(direction) & 0x7ULL) << 60);
+    }
+
     bool operator==(const Move& other) const {
         return startX == other.startX && startY == other.startY &&
                endX == other.endX && endY == other.endY &&
@@ -51,16 +66,16 @@ struct OccupiedPoint {
 // Politique avec poids
 class Policy {
 private:
-    std::unordered_map<std::string, double> weights;
+    std::unordered_map<std::uint64_t, double> weights;
 
 public:
     double weight(const Move& move) const {
-        auto it = weights.find(move.id());
+        auto it = weights.find(move.key());
         return it != weights.end() ? it->second : 0.0;
     }
 
     void adjust(const Move& move, double value) {
-        weights[move.id()] += value;
+        weights[move.key()] += value;
     }
 
     Policy copy() const {

@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
-#include <map>
 #include <string>
-#include <set>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -13,6 +13,15 @@ namespace JoinFive {
 
 namespace {
 constexpr int kDirectionCount = 4;
+
+// Hash compact pour une coordonnée (x, y) : deux entiers 32 bits empaquetés
+// dans un mot 64 bits. Suffisant et sans collision pour des grilles réalistes.
+struct PairHash {
+    std::size_t operator()(const std::pair<int, int>& p) const noexcept {
+        return (static_cast<std::size_t>(static_cast<std::uint32_t>(p.first)) << 32)
+             ^ static_cast<std::size_t>(static_cast<std::uint32_t>(p.second));
+    }
+};
 
 std::pair<int, int> deltaForDirection(int direction) {
     switch (direction) {
@@ -30,8 +39,8 @@ std::pair<int, int> deltaForDirection(int direction) {
 }
 
 struct SimpleGrid {
-    std::set<std::pair<int, int>> points;
-    std::map<std::pair<int, int>, int> lockMasks;
+    std::unordered_set<std::pair<int, int>, PairHash> points;
+    std::unordered_map<std::pair<int, int>, int, PairHash> lockMasks;
     int score = 0;
 
     bool isOccupied(int x, int y) const {
@@ -122,7 +131,7 @@ std::vector<Move> generateLegalMoves(const SimpleGrid& grid,
                                      int gridWidth,
                                      int gridHeight,
                                      int maxLocksPerLine) {
-    std::set<std::pair<int, int>> candidateCells;
+    std::unordered_set<std::pair<int, int>, PairHash> candidateCells;
 
     for (const auto& point : grid.points) {
         for (int dx = -1; dx <= 1; ++dx) {
@@ -144,7 +153,7 @@ std::vector<Move> generateLegalMoves(const SimpleGrid& grid,
     }
 
     std::vector<Move> result;
-    std::unordered_set<std::string> seen;
+    std::unordered_set<std::uint64_t> seen;
 
     for (const auto& candidate : candidateCells) {
         for (int direction = 0; direction < kDirectionCount; ++direction) {
@@ -153,9 +162,10 @@ std::vector<Move> generateLegalMoves(const SimpleGrid& grid,
             for (int i = -4; i <= 0; ++i) {
                 int remainingLocks = std::max(0, maxLocksPerLine);
                 bool isValidLine = true;
-                std::vector<std::pair<int, int>> linePoints;
-                linePoints.reserve(5);
 
+                // Parcourt la fenêtre de 5 cases sans matérialiser de vecteur :
+                // la validité (bornes, occupation, verrous) est vérifiée ici,
+                // ce qui rend le contrôle isMoveLegal ultérieur superflu.
                 for (int j = 0; j < 5; ++j) {
                     const int x = candidate.first + delta.first * (i + j);
                     const int y = candidate.second + delta.second * (i + j);
@@ -166,8 +176,7 @@ std::vector<Move> generateLegalMoves(const SimpleGrid& grid,
                     }
 
                     if (x == candidate.first && y == candidate.second) {
-                        linePoints.push_back({x, y});
-                        continue;
+                        continue; // point nouvellement posé
                     }
 
                     if (!grid.isOccupied(x, y)) {
@@ -182,29 +191,22 @@ std::vector<Move> generateLegalMoves(const SimpleGrid& grid,
                         }
                         remainingLocks--;
                     }
-
-                    linePoints.push_back({x, y});
                 }
 
-                if (!isValidLine || linePoints.size() != 5) {
+                if (!isValidLine) {
                     continue;
                 }
 
-                Move move(linePoints.front().first,
-                          linePoints.front().second,
-                          linePoints.back().first,
-                          linePoints.back().second,
+                Move move(candidate.first + delta.first * i,
+                          candidate.second + delta.second * i,
+                          candidate.first + delta.first * (i + 4),
+                          candidate.second + delta.second * (i + 4),
                           candidate.first,
                           candidate.second,
                           direction,
                           0);
 
-                if (!grid.isMoveLegal(move, gridWidth, gridHeight, maxLocksPerLine)) {
-                    continue;
-                }
-
-                const std::string key = move.id();
-                if (seen.insert(key).second) {
+                if (seen.insert(move.key()).second) {
                     result.push_back(move);
                 }
             }
