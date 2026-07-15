@@ -8,14 +8,14 @@
 import SwiftUI
 import Combine
 
-private enum GameMode: String, CaseIterable, Identifiable {
+private enum GameMode: String, CaseIterable, Identifiable, Sendable, Codable {
     case fiveD = "5D"
     case fiveT = "5T"
 
     var id: String { rawValue }
 }
 
-private enum Direction: String, CaseIterable {
+private enum Direction: String, CaseIterable, Sendable, Codable {
     case horizontal
     case vertical
     case fall
@@ -40,12 +40,12 @@ private enum Direction: String, CaseIterable {
     }
 }
 
-private struct GridCoordinate: Hashable {
+private struct GridCoordinate: Hashable, Sendable, Codable {
     let x: Int
     let y: Int
 }
 
-private struct MoveLine: Hashable, Identifiable {
+private struct MoveLine: Hashable, Identifiable, Sendable, Codable {
     let points: [GridCoordinate]
     let newPoint: GridCoordinate
     let direction: Direction
@@ -68,7 +68,7 @@ private struct MoveLine: Hashable, Identifiable {
     }
 }
 
-private struct GridState {
+private struct GridState: Sendable, Codable {
     let width: Int
     let height: Int
     var mode: GameMode
@@ -231,9 +231,96 @@ private struct GridState {
             }
         }
     }
+
+    // MARK: - Codable (clé GridCoordinate dans locks nécessite un codage manuel)
+
+    private struct LockEntry: Codable {
+        let x: Int
+        let y: Int
+        let directions: [Direction]
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case width, height, mode, points, locks, lines
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(width, forKey: .width)
+        try c.encode(height, forKey: .height)
+        try c.encode(mode, forKey: .mode)
+        try c.encode(Array(points), forKey: .points)
+        let lockEntries = locks.map { LockEntry(x: $0.key.x, y: $0.key.y, directions: Array($0.value)) }
+        try c.encode(lockEntries, forKey: .locks)
+        try c.encode(lines, forKey: .lines)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        width  = try c.decode(Int.self,      forKey: .width)
+        height = try c.decode(Int.self,      forKey: .height)
+        mode   = try c.decode(GameMode.self, forKey: .mode)
+        let pointsArray = try c.decode([GridCoordinate].self, forKey: .points)
+        points = Set(pointsArray)
+        let lockEntries = try c.decode([LockEntry].self, forKey: .locks)
+        var locksDict: [GridCoordinate: Set<Direction>] = [:]
+        for entry in lockEntries {
+            locksDict[GridCoordinate(x: entry.x, y: entry.y)] = Set(entry.directions)
+        }
+        locks = locksDict
+        lines = try c.decode([MoveLine].self, forKey: .lines)
+    }
 }
 
-private protocol JoinFiveAlgorithm {
+// MARK: - Persistence
+
+private struct ScoreEntry: Codable, Identifiable {
+    var id: UUID = UUID()
+    var playerName: String
+    var score: Int
+    var mode: GameMode
+    var date: Date
+}
+
+private enum PersistenceService {
+    static var containerURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = appSupport.appendingPathComponent("joinFive", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    static var bestGridURL: URL { containerURL.appendingPathComponent("best.json") }
+    static var historyURL:  URL { containerURL.appendingPathComponent("history.json") }
+
+    static func saveBestGrid(_ grid: GridState) {
+        guard let data = try? JSONEncoder().encode(grid) else { return }
+        try? data.write(to: bestGridURL)
+    }
+
+    static func loadBestGrid() -> GridState? {
+        guard let data = try? Data(contentsOf: bestGridURL) else { return nil }
+        return try? JSONDecoder().decode(GridState.self, from: data)
+    }
+
+    static func appendScore(_ entry: ScoreEntry) {
+        var history = loadHistory()
+        history.append(entry)
+        history.sort { $0.score > $1.score }
+        if let data = try? JSONEncoder().encode(history) {
+            try? data.write(to: historyURL)
+        }
+    }
+
+    static func loadHistory() -> [ScoreEntry] {
+        guard let data = try? Data(contentsOf: historyURL) else { return [] }
+        return (try? JSONDecoder().decode([ScoreEntry].self, from: data)) ?? []
+    }
+}
+
+// MARK: - Algorithms
+
+private protocol JoinFiveAlgorithm: Sendable {
     var name: String { get }
     func nextMove(on grid: GridState) -> MoveLine?
 }
@@ -292,7 +379,10 @@ private struct NMCSAlgorithm: JoinFiveAlgorithm {
             var currentBestLine: MoveLine?
             var currentBestResult = SearchResult(score: Int.min, lines: [])
 
-            for line in possible {
+            // Limite le nombre de branches examinées pour rester fluide
+            let candidates = possible.count > 30 ? Array(possible.shuffled().prefix(30)) : possible
+
+            for line in candidates {
                 var child = runningGrid
                 child.addLine(line)
                 let candidate = search(grid: child, depth: depth - 1, deadline: deadline)
@@ -446,10 +536,20 @@ private final class JoinFiveViewModel: ObservableObject {
     @Published var elapsedTime: TimeInterval = 0
     @Published var isComputerRunning = false
     @Published var bestSessionScore = 0
+    @Published var playerName: String = "Joueur"
+    @Published var bestGrid: GridState? = nil
+    @Published var scoreHistory: [ScoreEntry] = []
+    @Published var showBestGrid = false
+    @Published var showHistory = false
 
     private var timerTask: Task<Void, Never>?
     private var simulationTask: Task<Void, Never>?
     private var simulationStartDate: Date?
+
+    init() {
+        bestGrid = PersistenceService.loadBestGrid()
+        scoreHistory = PersistenceService.loadHistory()
+    }
 
     var scoreText: String {
         isGameOver ? "Partie terminee: \(grid.score)" : "Score: \(grid.score)"
@@ -488,6 +588,7 @@ private final class JoinFiveViewModel: ObservableObject {
             return
         case 1:
             applyMove(possible[0])
+            checkGameOverAndPersist()
         default:
             lineChoices = possible
         }
@@ -496,6 +597,7 @@ private final class JoinFiveViewModel: ObservableObject {
     func chooseLine(_ line: MoveLine) {
         lineChoices = []
         applyMove(line)
+        checkGameOverAndPersist()
     }
 
     func toggleComputerSimulation() {
@@ -508,17 +610,31 @@ private final class JoinFiveViewModel: ObservableObject {
         simulationStartDate = Date()
         startTimer()
 
-        simulationTask = Task { [weak self] in
+        simulationTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                guard self.isComputerRunning else { break }
-
-                let algo = self.makeAlgorithm()
-                guard let next = algo.nextMove(on: self.grid) else {
-                    self.stopComputerIfNeeded()
-                    break
+                // Lecture de l'état sur le MainActor
+                let (snapshot, computerType, isRunning) = await MainActor.run {
+                    (self.grid, self.computer, self.isComputerRunning)
                 }
-                self.applyMove(next)
+                guard isRunning else { break }
+
+                // Calcul du prochain coup sur le thread courant (background)
+                let algo = JoinFiveViewModel.buildAlgorithm(for: computerType)
+                let next = algo.nextMove(on: snapshot)
+
+                // Mise à jour de l'état sur le MainActor
+                let shouldContinue = await MainActor.run { () -> Bool in
+                    guard self.isComputerRunning else { return false }
+                    guard let line = next else {
+                        self.stopComputerIfNeeded()
+                        self.persistGameResult()
+                        return false
+                    }
+                    self.applyMove(line)
+                    return true
+                }
+                if !shouldContinue { break }
             }
         }
     }
@@ -549,14 +665,36 @@ private final class JoinFiveViewModel: ObservableObject {
         bestSessionScore = max(bestSessionScore, grid.score)
     }
 
+    private func checkGameOverAndPersist() {
+        guard isGameOver else { return }
+        persistGameResult()
+    }
+
+    private func persistGameResult() {
+        let entry = ScoreEntry(
+            playerName: playerName.isEmpty ? "Anonyme" : playerName,
+            score: grid.score,
+            mode: mode,
+            date: Date()
+        )
+        PersistenceService.appendScore(entry)
+        scoreHistory = PersistenceService.loadHistory()
+
+        if grid.score > (bestGrid?.score ?? -1) {
+            PersistenceService.saveBestGrid(grid)
+            bestGrid = grid
+        }
+    }
+
     private func makeAlgorithm() -> any JoinFiveAlgorithm {
+        JoinFiveViewModel.buildAlgorithm(for: computer)
+    }
+
+    nonisolated static func buildAlgorithm(for computer: ComputerType) -> any JoinFiveAlgorithm {
         switch computer {
-        case .random:
-            return RandomSearchAlgorithm()
-        case .nmcs:
-            return NMCSAlgorithm()
-        case .nrpa:
-            return NRPAAlgorithm()
+        case .random: return RandomSearchAlgorithm()
+        case .nmcs:   return NMCSAlgorithm()
+        case .nrpa:   return NRPAAlgorithm()
         }
     }
 }
@@ -690,6 +828,10 @@ struct ContentView: View {
             }
 
             HStack(spacing: 12) {
+                TextField("Nom", text: $viewModel.playerName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 100)
+
                 Picker("Joueur", selection: $viewModel.player) {
                     ForEach(JoinFiveViewModel.PlayerType.allCases) { player in
                         Text(player.rawValue).tag(player)
@@ -733,6 +875,16 @@ struct ContentView: View {
                 Button("Reset") {
                     viewModel.resetGame()
                 }
+
+                Button("Meilleur") {
+                    viewModel.showBestGrid = true
+                }
+                .disabled(viewModel.bestGrid == nil)
+
+                Button("Historique") {
+                    viewModel.showHistory = true
+                }
+                .disabled(viewModel.scoreHistory.isEmpty)
             }
 
             ScrollView([.horizontal, .vertical]) {
@@ -773,6 +925,45 @@ struct ContentView: View {
             }
             .padding(20)
             .frame(minWidth: 340)
+        }
+        // Feuille meilleure grille
+        .sheet(isPresented: $viewModel.showBestGrid) {
+            if let best = viewModel.bestGrid {
+                VStack(spacing: 12) {
+                    Text("Meilleure grille — Score : \(best.score)")
+                        .font(.title2.weight(.bold))
+                    ScrollView([.horizontal, .vertical]) {
+                        JoinFiveBoardView(grid: best, hintLines: []) { _ in }
+                            .padding(8)
+                    }
+                    Button("Fermer") { viewModel.showBestGrid = false }
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding()
+                .frame(minWidth: 600, minHeight: 500)
+            }
+        }
+        // Feuille historique
+        .sheet(isPresented: $viewModel.showHistory) {
+            VStack(spacing: 12) {
+                Text("Historique des scores")
+                    .font(.title2.weight(.bold))
+                Table(viewModel.scoreHistory) {
+                    TableColumn("Joueur", value: \.playerName)
+                    TableColumn("Score") { entry in
+                        Text("\(entry.score)")
+                    }
+                    TableColumn("Mode", value: \.mode.rawValue)
+                    TableColumn("Date") { entry in
+                        Text(entry.date.formatted(date: .abbreviated, time: .shortened))
+                    }
+                }
+                .frame(minHeight: 300)
+                Button("Fermer") { viewModel.showHistory = false }
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding()
+            .frame(minWidth: 600, minHeight: 400)
         }
     }
 }
